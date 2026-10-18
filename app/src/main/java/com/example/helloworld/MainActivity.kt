@@ -13,7 +13,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val btn = Button(this).apply { 
-            text = "Enable SideLingua Bubble"
+            text = "Enable SideLingua Bubble\n(Tap to activate)"
             textSize = 18f
         }
         setContentView(btn)
@@ -21,10 +21,11 @@ class MainActivity : AppCompatActivity() {
             if (!Settings.canDrawOverlays(this)) {
                 val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
                 startActivity(intent)
-                Toast.makeText(this, "Please allow overlay permission", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Allow overlay permission then tap again", Toast.LENGTH_LONG).show()
             } else {
-                Toast.makeText(this, "SideLingua ready! Bubble would appear here", Toast.LENGTH_SHORT).show()
-                // For full floating service, add your FloatingTranslatorService.kt
+                val serviceIntent = Intent(this, FloatingTranslatorService::class.java)
+                startForegroundService(serviceIntent)
+                Toast.makeText(this, "SideLingua bubble active! Check your screen edge", Toast.LENGTH_LONG).show()
             }
         }
     }
