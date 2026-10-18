@@ -2,11 +2,12 @@ package com.example.helloworld
 
 import android.app.*
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.os.Build
 import android.os.IBinder
 import android.view.*
 import android.widget.*
-import android.os.Build
 import androidx.core.app.NotificationCompat
 
 class FloatingTranslatorService : Service() {
@@ -17,121 +18,95 @@ class FloatingTranslatorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        
-        // FIX: Android 8+ requires foreground notification or it kills the service
-        createNotificationChannel()
-        val notification = NotificationCompat.Builder(this, "sidelingua_channel")
-            .setContentTitle("SideLingua Active")
-            .setContentText("Bubble is on screen edge - drag it!")
+        createChannel()
+        val notif = NotificationCompat.Builder(this, "sl")
+            .setContentTitle("SideLingua Bubble ON")
+            .setContentText("Look for red TR bubble on screen edge")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
-        startForeground(1, notification)
-        
-        Toast.makeText(this, "SideLingua service started!", Toast.LENGTH_SHORT).show()
+        startForeground(1, notif)
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        
-        try {
-            floatingView = LayoutInflater.from(this).inflate(R.layout.overlay_translator, null)
 
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            )
-            params.gravity = Gravity.CENTER_VERTICAL or Gravity.END
-            params.x = 20
-            params.y = 0
+        // Create bubble BY CODE - no XML needed, so can't crash
+        val bubble = TextView(this).apply {
+            text = "TR"
+            setBackgroundColor(Color.parseColor("#FF2196F3"))
+            setTextColor(Color.WHITE)
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setPadding(30, 60, 30, 60)
+        }
 
-            windowManager.addView(floatingView, params)
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) 
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY 
+            else WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = 100
+        params.y = 300
 
-            val bubble = floatingView.findViewById<View>(R.id.bubble_collapsed)
-            val expanded = floatingView.findViewById<View>(R.id.panel_expanded)
-            val btnClose = floatingView.findViewById<View>(R.id.btn_minimize)
-            val input = floatingView.findViewById<EditText>(R.id.input_text)
-            val output = floatingView.findViewById<TextView>(R.id.output_text)
-            val btnTranslate = floatingView.findViewById<Button>(R.id.btn_translate)
-            val chipContext = floatingView.findViewById<RadioGroup>(R.id.chip_context)
+        windowManager.addView(bubble, params)
+        floatingView = bubble
 
-            bubble.setOnClickListener {
-                bubble.visibility = View.GONE
-                expanded.visibility = View.VISIBLE
-                params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                windowManager.updateViewLayout(floatingView, params)
-            }
+        Toast.makeText(this, "Bubble added at 100,300 - drag it!", Toast.LENGTH_LONG).show()
 
-            btnClose.setOnClickListener {
-                expanded.visibility = View.GONE
-                bubble.visibility = View.VISIBLE
-                params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                windowManager.updateViewLayout(floatingView, params)
-            }
+        // Drag + click
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        var isClick = false
 
-            btnTranslate.setOnClickListener {
-                val text = input.text.toString()
-                if (text.isBlank()) {
-                    output.text = "Paste something to translate bro..."
-                    return@setOnClickListener
+        bubble.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    isClick = true
+                    true
                 }
-                val contextMode = when (chipContext.checkedRadioButtonId) {
-                    R.id.chip_assignment -> "assignment"
-                    R.id.chip_conversation -> "conversation"
-                    else -> "general"
-                }
-                output.text = translateWithContext(text, contextMode)
-            }
-
-            var initialX = 0
-            var initialY = 0
-            var initialTouchX = 0f
-            var initialTouchY = 0f
-            bubble.setOnTouchListener { _, event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x; initialY = params.y
-                        initialTouchX = event.rawX; initialTouchY = event.rawY
-                        true
+                MotionEvent.ACTION_MOVE -> {
+                    if (Math.abs(event.rawX - initialTouchX) > 10 || Math.abs(event.rawY - initialTouchY) > 10) {
+                        isClick = false
                     }
-                    MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX + (initialTouchX - event.rawX).toInt()
-                        params.y = initialY + (event.rawY - initialTouchY).toInt()
-                        windowManager.updateViewLayout(floatingView, params)
-                        true
-                    }
-                    else -> false
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    windowManager.updateViewLayout(bubble, params)
+                    true
                 }
+                MotionEvent.ACTION_UP -> {
+                    if (isClick) {
+                        Toast.makeText(this, "Bubble WORKS! Now we add translator panel", Toast.LENGTH_LONG).show()
+                    }
+                    true
+                }
+                else -> false
             }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun createNotificationChannel() {
+    private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel("sidelingua_channel", "SideLingua Bubble", NotificationManager.IMPORTANCE_LOW)
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            val ch = NotificationChannel("sl", "SideLingua", NotificationManager.IMPORTANCE_LOW)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
         }
     }
 
-    private fun translateWithContext(text: String, mode: String): String {
-        return when {
-            text.contains("débutant", true) -> "HUMAN TRANSLATION (Conversation):\n'I'm a beginner, Facebook ads is too hard — both setup and ad choice. I'm thinking of hiring an agency.'"
-            mode == "assignment" -> "Assignment Mode:\n$text\n-> Explained as clear instructions"
-            mode == "conversation" -> "Chat Mode:\n$text\n-> Natural human meaning"
-            else -> "General:\n$text\n-> Human meaning explained"
-        }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (::floatingView.isInitialized) windowManager.removeView(floatingView)
-    }
-    
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
+        try { windowManager.removeView(floatingView) } catch (_: Exception) {}
     }
 }
